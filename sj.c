@@ -102,46 +102,49 @@ struct context {
 }
 
 static void
+send_tag(const char *tag)
+{
+	if (write(WRITE_FD, tag, strlen(tag)) < 0)
+		perror(__func__);
+}
+
+static void
 xmpp_ping(struct context *ctx)
 {
 	char msg[BUFSIZ];
-	int size = snprintf(msg, sizeof msg,
+	snprintf(msg, sizeof msg,
 	    "<iq from='%s@%s/%s' to='%s' id='%s' type='get'>"
 		"<ping xmlns='urn:xmpp:ping'/>"
 	    "</iq>",
 	    ctx->user, ctx->server, ctx->resource, ctx->server, ctx->id);
 
-	if ((size = write(WRITE_FD, msg, size)) < 0)
-		perror(__func__);
+	send_tag(msg);
 }
 
 static void
 xmpp_session(struct context *ctx)
 {
 	char msg[BUFSIZ];
-	int size = snprintf(msg, sizeof msg,
+	snprintf(msg, sizeof msg,
 	    "<iq to='%s' type='set' id='sess_1'>"
 		"<session xmlns='urn:ietf:params:xml:ns:xmpp-session'/>"
 	    "</iq>" , ctx->server);
 
-	if ((size = write(WRITE_FD, msg, size)) < 0)
-		perror(__func__);
+	send_tag(msg);
 }
 
 static void
 xmpp_bind(struct context *ctx)
 {
 	char *msg = NULL;
-	ssize_t size = asprintf(&msg,
+	asprintf(&msg,
 	    "<iq type='set' id='bind_2'>"
 		"<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
 		    "<resource>%s</resource>"
 		"</bind>"
 	    "</iq>", ctx->resource);
 
-	if ((size = write(WRITE_FD, msg, strlen(msg))) < 0)
-		perror(__func__);
-
+	send_tag(msg);
 	ctx->state = BIND_OUT;
 
 	free(msg);
@@ -157,12 +160,11 @@ xmpp_auth(struct context *ctx)
 		err(EXIT_FAILURE, "readpassphrase");
 
 	char *authstr = sasl_plain(ctx->user, pass);
-	int size = snprintf(msg, sizeof msg,
+	snprintf(msg, sizeof msg,
 		"<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl'"
 		" mechanism='PLAIN'>%s</auth>", authstr);
 
-	if (write(WRITE_FD, msg, size) < 0)
-		perror(__func__);
+	send_tag(msg);
 
 	/* XXX: these buffers should be zeroed with explicit_bzero(3) */
 	bzero(pass, sizeof pass);
@@ -173,17 +175,10 @@ xmpp_auth(struct context *ctx)
 }
 
 static void
-send_tag(const char *tag)
-{
-	if (write(WRITE_FD, tag, strlen(tag)) < 0)
-		perror(__func__);
-}
-
-static void
 xmpp_init(struct context *ctx)
 {
 	char msg[BUFSIZ];
-	int size = snprintf(msg, sizeof msg,
+	snprintf(msg, sizeof msg,
 	    "<?xml version='1.0'?>"
 	    "<stream:stream "
 		"from='%s@%s' "
@@ -194,8 +189,7 @@ xmpp_init(struct context *ctx)
 		"xmlns:stream='http://etherx.jabber.org/streams'>\n",
 	    ctx->user, ctx->server, ctx->server);
 
-	if (write(WRITE_FD, msg, size) < 0)
-		perror(__func__);
+	send_tag(msg);
 }
 
 static bool
@@ -289,7 +283,7 @@ server_tag(char *tag, void *data)
 		argv[0] = "tlsc";
 		memcpy(argv + 1, argv0, sizeof(argv) - 1);
 		execvp("tlsc", argv);
-		err(EXIT_FAILURE, "execv");
+		err(EXIT_FAILURE, "execvp tlsc");
 	}
 
 	/* SASL authentification successful */
@@ -464,13 +458,14 @@ main(int argc, char *argv[])
 		if (sel == -1) goto err;
 
 		if (FD_ISSET(READ_FD, &readfds)) { /* data from xmpp server */
-			if ((n = read(READ_FD, buf, BUFSIZ)) < 0) goto err;
+			if ((n = read(READ_FD, buf, sizeof buf)) < 0) goto err;
 			if (n == 0) break;	/* connection closed */
 			bxml_add_buf(ctx.bxml, buf, n);
 		} else if (FD_ISSET(ctx.fd_in, &readfds)) {
-			while ((n = read(ctx.fd_in, buf, BUFSIZ)) > 0)
-				if (write(WRITE_FD, buf, n) < n)
-					goto err;
+			while ((n = read(ctx.fd_in, buf, sizeof(buf) - 1)) > 0){
+				buf[n] = '\0';
+				send_tag(buf);
+			}
 
 			if (n == 0) {	/* close input fifo on EOF */
 				if (close(ctx.fd_in) == -1)
