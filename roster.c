@@ -14,6 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <sys/stat.h>
+
 #include <assert.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -22,15 +24,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <sys/stat.h>
-
 #include <mxml.h>
 
 static bool
 result(mxml_node_t *iq)
 {
 	if (iq == NULL) return false;
-	if (iq->child != NULL) return false;
+	if (mxmlGetFirstChild(iq) != NULL) return false;
 
 	return true;
 }
@@ -63,9 +63,10 @@ list(mxml_node_t *iq)
 	mxml_node_t *item = NULL;
 
 	if (iq == NULL) return false;
-	if (iq->child == NULL) return false;
+	if ((item = mxmlGetFirstChild(iq)) == NULL) return false;
 
-	for (item = iq->child->child; item != NULL; item = item->next) {
+	for (item = mxmlGetFirstChild(item); item != NULL;
+	    item = mxmlGetNextSibling(item)) {
 		const char *name = mxmlElementGetAttr(item, "name");
 		const char *jid = mxmlElementGetAttr(item, "jid");
 		const char *sub = mxmlElementGetAttr(item, "subscription");
@@ -171,11 +172,13 @@ main(int argc, char *argv[])
 	if (close(fd) == -1) goto err;
 	if (unlink(path_in) == -1) goto err;
 
-	if (list_flag)
-		if (list(tree->child->next) == false) return EXIT_FAILURE;
+	if (list_flag &&
+	    list(mxmlGetNextSibling(mxmlGetFirstChild(tree))) == false)
+		return EXIT_FAILURE;
 
-	if (add_flag)
-		if (result(tree->child->next) == false) return EXIT_FAILURE;
+	if (add_flag &&
+	    result(mxmlGetNextSibling(mxmlGetFirstChild(tree))) == false)
+		return EXIT_FAILURE;
 
 	return EXIT_SUCCESS;
  err:

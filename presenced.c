@@ -14,6 +14,11 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <sys/queue.h>
+#include <sys/select.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include <dirent.h>
 #include <err.h>
 #include <errno.h>
@@ -26,11 +31,6 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-
-#include <sys/queue.h>
-#include <sys/select.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 #include <mxml.h>
 
@@ -119,7 +119,7 @@ check_contact(struct context *ctx, struct contact *c)
 	}
 
 	if (c->mystatus != NULL) {
-		if (strncmp(buf, c->mystatus, sizeof c->mystatus) != 0) {
+		if (strncmp(buf, c->mystatus, sizeof buf) != 0) {
 			free(c->mystatus);
 			c->mystatus = strdup(buf);
 			send_presence(ctx, c);
@@ -225,18 +225,17 @@ recv_presence(char *tag, void *data)
 	if (tree == NULL) err(EXIT_FAILURE, "%s: no xml tree found", __func__);
 	mxmlLoadString(tree, tag, MXML_NO_CALLBACK);
 
-	if (tree->child->next == NULL) goto err;
-	node = tree->child->next;
+	if ((node = mxmlGetNextSibling(mxmlGetFirstChild(tree))) == NULL) goto err;
 	if ((tag_name = mxmlGetElement(node)) == NULL) goto err;
 	if (strcmp("presence", tag_name) != 0)
 		goto err;
 
-	if ((from = mxmlElementGetAttr(tree->child->next, "from")) == NULL)
+	if ((from = mxmlElementGetAttr(node, "from")) == NULL)
 		goto err;
 
 	/* The presence of the 'type' attribute indicates offline.
 	   The lack of it indicates online. */
-	if (mxmlElementGetAttr(tree->child->next, "type"))
+	if (mxmlElementGetAttr(node, "type"))
 		is_online = false;
 	else
 		is_online = true;
@@ -277,7 +276,7 @@ recv_presence(char *tag, void *data)
  err:
 	if (errno != 0)
 		perror(__func__);
-	mxmlDelete(tree->child->next);
+	mxmlDelete(node);
 }
 
 static void

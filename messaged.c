@@ -14,6 +14,11 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <sys/queue.h>
+#include <sys/select.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include <dirent.h>
 #include <err.h>
 #include <errno.h>
@@ -33,11 +38,6 @@
 
 #include <time.h>
 #include <unistd.h>
-
-#include <sys/queue.h>
-#include <sys/select.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 #include <mxml.h>
 
@@ -161,11 +161,49 @@ msg_send(struct context *ctx, const char *msg, const char *to)
 		perror(__func__);
 }
 
+char *
+escape_tag(const char *string)
+{
+	char *new;
+	char ch[2] = {'\0', '\0'};
+	size_t length = 1;	/* One byte for the null character */
+
+	/* allocate the amount of space that we'll need */
+	for (size_t i = 0; string[i]; i++) {
+		/* For every <, we need 3 more bytes */
+		if (string[i] == '<') length += 4;
+		/* For every &, we need 4 more bytes */
+		else if (string[i] == '&') length += 5;
+		else length++;
+	}
+
+	if ((new = calloc(length, sizeof *new)) == NULL)
+		err(EXIT_FAILURE, "malloc");
+
+	for (; string[0]; string++) {
+		/* TODO: We should do official XML escaping here. */
+		switch (string[0]) {
+		case '<':
+			strlcat(new, "&lt;", length);
+			break;
+		case '&':
+			strlcat(new, "&lt;", length);
+			break;
+		default:
+			ch[0] = string[0];
+			strlcat(new, ch, length);
+		}
+	}
+
+	return new;
+}
+
 static bool
 send_message(struct context *ctx, struct contact *con)
 {
 	char prompt[BUFSIZ];
 	char buf[BUFSIZ];
+	char *escaped = NULL;
 	ssize_t size = 0;
 
 	if ((size = read(con->fd, buf, sizeof(buf) - 1)) < 0)
@@ -179,11 +217,20 @@ send_message(struct context *ctx, struct contact *con)
 		return true;
 
 	buf[size] = '\0';
-	if (buf[size - 1] == '\n')
+	/* Trim trailing control characters. */
+	while (iscntrl(buf[size - 1])) {
 		buf[size - 1] = '\0';
-	msg_send(ctx, buf, con->name);
+		size--;
+	}
+	/* These characters must be escaped. */
+	if ((ssize_t)strcspn(buf, "<&") != size) {
+		/* Get a new string. */
+		escaped = escape_tag(buf);
+	}
+	msg_send(ctx, escaped ? escaped : buf, con->name);
+	free(escaped);
 
-	/* Write message to the out file, that the use see its own messages. */
+	/* Write message to the out file, letting the user see its own messages. */
 	prepare_prompt(prompt, sizeof prompt, ctx->jid);
 	if (write(con->out, prompt, strlen(prompt)) == -1) return false;
 	if (write(con->out, buf, size) == -1) return false;
@@ -210,7 +257,7 @@ recv_message(char *tag, void *data)
 	if (tree == NULL) err(EXIT_FAILURE, "unable to load xml base");
 
 	mxmlLoadString(tree, tag, MXML_NO_CALLBACK);
-	if ((node = tree->child) == NULL)
+	if ((node = mxmlGetFirstChild(tree)) == NULL)
 		goto err;
 
 	if ((tag_name = mxmlGetElement(node)) == NULL) goto err;
@@ -226,8 +273,8 @@ recv_message(char *tag, void *data)
 	if (c == NULL)
 		c = add_contact(ctx, from);
 
-	body = mxmlFindElement(node->child, tree, "body", NULL, NULL,
-	    MXML_NO_DESCEND);
+	body = mxmlFindElement(tree, tree, "body", NULL, NULL,
+	    MXML_DESCEND);
 	if (body == NULL)
 		goto err;
 
@@ -235,7 +282,7 @@ recv_message(char *tag, void *data)
 	write(c->out, prompt, strlen(prompt));
 
 	/* concatinate all text peaces */
-	for (mxml_node_t *txt = body->child; txt != NULL;
+	for (mxml_node_t *txt = mxmlGetFirstChild(body); txt != NULL;
 	    txt = mxmlGetNextSibling(txt)) {
 		int space = 0;
 		const char *t = mxmlGetText(txt, &space);
@@ -247,7 +294,7 @@ recv_message(char *tag, void *data)
  err:
 	if (errno != 0)
 		perror(__func__);
-	mxmlDelete(tree->child);
+	mxmlDelete(node);
 }
 
 static bool

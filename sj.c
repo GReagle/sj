@@ -28,6 +28,7 @@
 #include <limits.h>
 #include <netdb.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,7 +57,7 @@
 #define WRITE_FD 7
 #define READ_FD 6
 
-static int debug=0;
+static bool debug = false;
 char **argv0;
 int argc0;
 
@@ -200,14 +201,14 @@ start_sub_proccess(struct context *ctx)
 {
 	char cmd[BUFSIZ];
 
-	snprintf(cmd, sizeof cmd, "exec messaged -j %s@%s -d %s",
+	snprintf(cmd, sizeof cmd, "exec messaged -j %s@%s -d '%s'",
 	    ctx->user, ctx->server, ctx->dir);
 	if ((ctx->fh_msg = popen(cmd, "w")) == NULL) goto err;
 
-	snprintf(cmd, sizeof cmd, "exec presenced -d %s", ctx->dir);
+	snprintf(cmd, sizeof cmd, "exec presenced -d '%s'", ctx->dir);
 	if ((ctx->fh_pre = popen(cmd, "w")) == NULL) goto err;
 
-	snprintf(cmd, sizeof cmd, "exec iqd -d %s", ctx->dir);
+	snprintf(cmd, sizeof cmd, "exec iqd -d '%s'", ctx->dir);
 	if ((ctx->fh_iq = popen(cmd, "w")) == NULL) goto err;
 
 	return true;
@@ -260,7 +261,7 @@ server_tag(char *tag, void *data)
 	mxmlLoadString(tree, tag, MXML_NO_CALLBACK);
 	/* End of HACK */
 
-	if ((node = tree->child->next) == NULL)
+	if ((node = mxmlGetNextSibling(mxmlGetFirstChild(tree))) == NULL)
 		err(EXIT_FAILURE, "no node found");
 
 	const char *tag_name = mxmlGetElement(node);
@@ -344,7 +345,7 @@ server_tag(char *tag, void *data)
 	if (errno != 0)
 		perror(__func__);
  out:
-	mxmlDelete(tree->child->next);
+	mxmlDelete(node);
 }
 
 /*
@@ -400,7 +401,7 @@ main(int argc, char *argv[])
 	while ((ch = getopt(argc, argv, "d:s:u:r:D")) != -1) {
 		switch (ch) {
 		case 'D':
-			debug = 1;
+			debug = true;
 			break;
 		case 'd':
 			ctx.dir = strdup(optarg);

@@ -8,14 +8,14 @@ Paper of the [slcon2](http://suckless.org/conference/): http://klemkow.net/sj.pd
 
 ## Goals
 
-The XMPP protocol is a monster and totally over engineered.  But you have to
-deal with it cause of its wide usages and good features.  To beat this monster
-this project try to dived it intro smaller parts and to create one program
+The XMPP protocol is a monster and totally overengineered.  But you have to
+deal with it because of its widespread use and good features.  To beat this monster,
+this project tries to divide it into smaller parts and to create one program
 to handle one aspect of XMPP.
 
-The program "sj" just do a few things:
+The program "sj" just does a few things:
 
-  * opens a connection with an XMPP server
+  * opens a connection to an XMPP server
   * do authentication (+binding +session registration)
   * perfoms keep-alive pings to the server
   * segmenting tags and routing them to other daemons:
@@ -25,7 +25,7 @@ The program "sj" just do a few things:
 
 ## requires
 
-  * mxml 2.8
+  * mxml 2.8 or 3.x
   * libbsd (for GNU-systems like Linux)
   * [ucspi-tcp](http://cr.yp.to/ucspi-tcp.html)
   * [ucspi-tools](https://github.com/younix/ucspi)
@@ -37,7 +37,7 @@ The program "sj" just do a few things:
 export SJ_DIR=/home/user/.xmpp
 
 # start daemon
-env SJ_USER=user SJ_SERVER=server.org SJ_RESOURCE=sj tcpclient server.org 5222 sj &
+tcpclient server.org 5222 sj -u user -s server.org -r sj &
 password:
 
 # set presence to 'online'
@@ -47,15 +47,16 @@ presence
 roster -a other@server.com -n joe
 
 # subscribe his online status
-presence -to other@server.com subscribe
+presence -t other@server.com subscribe
 
 # let him see your online status
-presence -to other@server.com subscribed
+presence -t other@server.com subscribed
 
 # view buddies on your roster
 roster
 other@server.org                both    joe
 ```
+
 ## TODO
 
   * ~~replace socket-handling with UCSPI~~
@@ -90,11 +91,13 @@ other@server.org                both    joe
 
 ## build
 
- * git clone https://github.com/younix/sj.git
- * cd sj
- * git submodule init
- * git submodule update
- * make
+```sh
+git clone https://github.com/younix/sj.git
+cd sj
+git submodule init
+git submodule update
+make
+```
 
 ## plugins
 
@@ -107,10 +110,20 @@ See [sj tools](https://github.com/GReagle/sjt) for some front ends.
 
 ## known issues
 
-The following command won't work due to
-[a bug in tlsc](https://github.com/younix/ucspi/issues/5)
+### POSIXLY_CORRECT for GNU getopt()
+
+The following command will produce error "tlsc: invalid option" on systems
+with GNU getopt()
 
 `tcpclient server.org 5222 sj -u user -s server.org -r sj`
 
-so use environment variables instead of the command line options.  This is
-demonstrated in the "usage" section of this document.
+unless you set the environment variable POSIXLY_CORRECT.  See the
+[issue for tlsc](https://github.com/younix/ucspi/issues/5) for more
+details.  You can also get around this problem by using sj environment
+variables (e.g. SJ_USER) instead of command line options.
+
+### TLSC_NO_VERIFICATION
+
+Currently, you need to set the environment variable `export
+TLSC_NO_VERIFICATION=1` in order to avoid "tlsc: tls_error: ssl verify
+setup failure".
